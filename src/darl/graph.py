@@ -76,6 +76,46 @@ class Graph:  # directed acyclic graph really
         nodes = self.ancestors(node) | {node}
         return self.subset(nodes)
 
+    def to_networkx(self):
+        import networkx as nx
+
+        G = nx.DiGraph()
+
+        # add nodes with labels (optional)
+        for node_id, data in self.nodes.items():
+            G.add_node(node_id, **data)
+
+        # add edges
+        for sink, sources in self.edges.items():
+            for src in sources:
+                G.add_edge(src, sink)
+        return G
+
+    def visualize(self):
+        import tempfile
+        import matplotlib.pyplot as plt
+        import matplotlib.image as mpimg
+        from networkx.drawing.nx_agraph import to_agraph
+
+        G = self.to_networkx()
+        for n, data in G.nodes(data=True):
+            call_key = data['call_keys'][0]
+            kwargs = ', '.join(f'{k}={v}' for k, v in call_key.kwargs.items())
+            kwargs = kwargs or ' '
+            data['label'] = f'{call_key.service_name}({kwargs})'
+        A = to_agraph(G)
+
+        # Layout + Render
+        A.layout("dot")  # best DAG layout
+        with tempfile.NamedTemporaryFile(suffix=".png") as f:
+            A.draw(f.name)
+            img = mpimg.imread(f.name)
+
+        plt.figure(figsize=(8, 6))
+        plt.imshow(img)
+        plt.axis("off")
+        plt.show()
+
 
 @dataclass
 class NodeKey:

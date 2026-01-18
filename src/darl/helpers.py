@@ -1,3 +1,5 @@
+# TODO: break out hashing specific functions into its own hashing.py
+# TODO: make hasher configurable. can mostly be accessed through ngn, but CallKey will need to get it explicitly
 import inspect
 import json
 import hashlib
@@ -46,11 +48,13 @@ def hash_callable(obj):
 
     # Hash the instance attributes (including attributes from all parent classes)
     to_hash = []
-    
+
     # Traverse the class hierarchy (including parent classes)
     for cls in [obj] + mro:  # obj not a cls but eh, fits the interface here
         for attr in vars(cls):
-            if attr in ('__dict__', '__weakref__', '__module__', '__slotnames__'):  # pickle.dumps'ing and object can add __slotnames__ to it
+            if attr in ('__dict__', '__weakref__', '__module__',
+                        '__firstlineno__',
+                        '__slotnames__'):  # pickle.dumps'ing and object can add __slotnames__ to it
                 continue
             val = getattr(cls, attr)
             if inspect.isbuiltin(val):

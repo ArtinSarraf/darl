@@ -2,8 +2,10 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from darl.error_handling import ErrorSentinel
 from darl.provider import run_provider
-from darl.cache import Cache, CacheEntryResult, CacheEntryResultMeta
+from darl.cache import Cache, CacheEntryResult, CacheEntryResultMeta, CacheEntryGraphExecutionMeta
+from darl.constants import ExecutionStatus
 
 if TYPE_CHECKING:
     from darl.graph import Graph
@@ -73,21 +75,37 @@ def run_node(node, graph, cache):
     dep_service_mapping = create_dep_service_mapping(graph, dep_nodes)
 
     start = time.time()
-    result = run_provider(
-        # TODO: should I just pass in the node_data at this point? see if that fits when doing dask execution
-        node_data['provider'],
-        node_data['scope_call_path'],
-        dep_results,
-        dep_service_mapping,
-        node_data['iso_key'].hash,
-        # used for iter conflict avoidance. should this be scoped hash? needs to match with graph build get_deps
-        node_data['cache_key'],  # this and graph build id used for displaying extra context for error replay
-        graph.graph_build_id,
-        node_data['error_catched'],
-        node_data['catches_errors'],
-        **node_data['call_keys'][0].kwargs
-    )
-    duration_sec = time.time() - start
+    try:
+        result = run_provider(
+            # TODO: should I just pass in the node_data at this point? see if that fits when doing dask execution
+            node_data['provider'],
+            node_data['scope_call_path'],
+            dep_results,
+            dep_service_mapping,
+            node_data['iso_key'].hash,
+            # used for iter conflict avoidance. should this be scoped hash? needs to match with graph build get_deps
+            node_data['cache_key'],  # this and graph build id used for displaying extra context for error replay
+            graph.graph_build_id,
+            node_data['error_catched'],
+            node_data['catches_errors'],
+            **node_data['call_keys'][0].kwargs
+        )
+    except:
+        status = ExecutionStatus.ERRORED
+        raise
+    else:
+        if isinstance(result, ErrorSentinel):
+            status = ExecutionStatus.CAUGHT_ERROR
+        else:
+            status = ExecutionStatus.COMPUTED
+    finally:
+        duration_sec = time.time() - start
+        entry = CacheEntryGraphExecutionMeta(  # TODO: add memory info
+            duration_sec=duration_sec,
+            status=status
+        )
+        cache.set(f'graph_execution_meta:{graph.graph_build_id}:{node}', entry)
+
     # TODO: should we enforce return type matches type hint here when ngn.enforce_types=True?
     #       yes, but need to figure out how to check custom types first
     #       maybe to start if type is a string (e.g. ngn.type['some thing']) ignore, otherwise do a isinstance check?
@@ -97,7 +115,6 @@ def run_node(node, graph, cache):
     )
     cache_entry_result_meta = CacheEntryResultMeta(
         graph_build_id=graph.graph_build_id,
-        duration_sec=duration_sec,
     )
 
     # TODO: should we separate data passing mechanism from caching mechanism, right now one and the same
@@ -108,4 +125,3 @@ def run_node(node, graph, cache):
     # these two sets should be atomic
     cache.set(f'res:{node}', cache_entry_result)
     cache.set(f'res_meta:{node}', cache_entry_result_meta)
-
