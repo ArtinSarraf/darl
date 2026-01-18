@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "darl"
+version = "0.0.3"
+description = "Darl is a lightweight code execution framework that transparently provides incremental computations, caching, scenario/shock analysis, parallel/distributed execution and more."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Artin Sarraf", email = "asarraf.software@gmail.com" }
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/ArtinSarraf/darl"
