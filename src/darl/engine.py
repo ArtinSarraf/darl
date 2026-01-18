@@ -246,7 +246,10 @@ class Engine:
         return CallKeyCreator.from_call_path(self, ())
 
     def pin(self, call_key: 'CallKey', value, scope=None):
-        provider = self.service_mapping.get(call_key.service_name, call_path=(scope or ()))
+        try:
+            provider = self.service_mapping.get(call_key.service_name, call_path=(scope or ()))
+        except KeyError:
+            provider = None
         if isinstance(provider, PinnedProvider):
             pass
         else:
@@ -329,7 +332,3 @@ class Engine:
                   allow_anon_services=allow_anon_services)
         ngn.update(providers, inplace=True)
         return ngn
-
-
-
-
