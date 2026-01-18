@@ -377,6 +377,29 @@ def test_scoped_update():
     assert ngn2.A() == 6
 
 
+@pytest.mark.xfail
+def test_scoped_update_non_existing_service():
+    def A(B, C):
+        return B + C
+
+    def B():
+        return 1
+
+    def C():
+        return 2
+
+    def C_prime():
+        return 3
+
+    ngn = Engine.create([A, B, C])
+    try:
+        ngn.update({'C': C_prime}, scope=('X',))
+    except:
+        assert True
+    else:
+        assert False
+
+
 def test_args():
     def A(ngn, x):
         b = ngn.B(x)
@@ -2068,6 +2091,53 @@ def test_code_hashing_closure():
     assert hashA != hashC
     assert hashB != hashC
 
+
+def test_code_hashing_external_function():
+    from darl.helpers import hash_callable
+
+    def some_func():
+        return 99
+
+    class A:
+        def __call__(self, ngn):
+            return some_func()
+
+    hash1 = hash_callable(A())
+
+    def some_func():
+        return 100
+
+    class A:
+        def __call__(self, ngn):
+            return some_func()
+
+    hash2 = hash_callable(A())
+
+    assert hash1 == hash2
+
+    def some_func():
+        return 99
+
+    class A:
+        _some_func = some_func
+        def __call__(self, ngn):
+            return some_func()
+
+    hash3 = hash_callable(A())
+
+    def some_func():
+        return 100
+
+    class A:
+        _some_func = some_func
+        def __call__(self, ngn):
+            return some_func()
+
+    hash4 = hash_callable(A())
+
+    assert hash3 != hash4
+
+
 def test_catch_error_across_runs():
     def Root(A):
         return A + 1
@@ -2655,6 +2725,57 @@ def test_trace_2():
     assert d_thru_b.node_id == d_thru_c.node_id
 
 
+def test_trace_status_with_error():
+    from darl.constants import ExecutionStatus
+
+    def A(ngn):
+        b = ngn.B()
+        ngn.collect()
+        return b + 1
+
+    def B(ngn):
+        b = ngn.catch.B2()
+        ngn.collect()
+        match b:
+            case ngn.error():
+                raise b.error
+            case _:
+                return b
+
+    def B2(ngn):
+        c = ngn.C()
+        d = ngn.D()
+        ngn.collect()
+        return c / d
+
+    def C(ngn):
+        return 1
+
+    def D(ngn):
+        return 0
+
+    ngn = Engine.create([A, B, B2, C, D])
+    ngn.D()
+    try:
+        ngn.A()
+    except:
+        assert True
+    else:
+        assert False
+
+    trace = ngn.trace()
+    assert trace.execution_status == ExecutionStatus.NOT_RUN
+    assert trace.ups[0].execution_status == ExecutionStatus.ERRORED
+    assert trace.ups[0].ups[0].execution_status == ExecutionStatus.CAUGHT_ERROR
+    statuses = {}
+    for i in [0, 1]:
+        trace_i = trace.ups[0].ups[0].ups[i]
+        service_name = trace_i.node_data['call_keys'][0].service_name
+        statuses[service_name] = trace_i.execution_status
+    assert statuses['C'] == ExecutionStatus.COMPUTED
+    assert statuses['D'] == ExecutionStatus.FROM_CACHE
+
+
 def test_trace_result_entry_removed():
     def A(B):
         return B + 1
@@ -2980,6 +3101,25 @@ def test_cache_1():
     assert ngn.trace().computed
     assert sorted(ngn.trace().ups, key=str)[0].from_cache
     assert sorted(ngn.trace().ups, key=str)[1].computed
+
+
+def test_cache_purge():
+    def A(B, C):
+        return B + C
+
+    def B():
+        return 1
+
+    def C():
+        return 2
+
+    ngn = Engine.create([A, B, C])
+    ngn.A()
+    ngn.A()
+    assert ngn.trace().from_cache
+    ngn.cache.purge()
+    ngn.A()
+    assert ngn.trace().computed
 
 
 @pytest.mark.xfail
@@ -3928,6 +4068,25 @@ def test_ngn_provider_no_collect():
     assert ngn.A() == 4
 
 
+@pytest.mark.xfail
+def test_ngn_provider_no_collect_call_made():
+    def A(ngn):
+        b = ngn.B()
+        return b + 1
+
+    def B(ngn):
+        return 1
+
+    ngn = Engine.create([A, B])
+    try:
+        ngn.A()
+    except RuntimeError:  # placehlder exception need explicit exception here
+        assert True
+    else:
+        assert False
+
+
+
 # region these can't be nested functions to work with pickle...
 class _ngn_serialization_A:
     def __init__(self, deps):
@@ -4263,3 +4422,18 @@ def test_pin():
     assert ngn4.B(1, 2) == 999
     assert ngn4.B(1, 3) == 777
     assert_provider_exception_raise(lambda: ngn4.B(1, 9), KeyError)
+
+
+def test_pin_non_existing_service():
+    from darl.call_key import CallKey
+
+    def A(ngn, x, y):
+        b = ngn.B(x, y)
+        ngn.collect()
+        return b + 1
+
+    ngn = Engine.create([A])
+    ngn2 = ngn.pin(CallKey('B', {'x': 1, 'y': 2}), 999)
+
+    assert ngn2.A(1, 2) == 1000
+    assert ngn2.B(1, 2) == 999
