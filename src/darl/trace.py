@@ -1,25 +1,17 @@
-from enum import Enum, auto
-
 from darl.execution.sequential import SequentialRunner
 from darl.graph import trim_graph
 from darl.helpers import NumberedList
 
 from darl.cache import ThroughCache, DictCache
+from darl.constants import ExecutionStatus
 
 
 # TODO: how to traverse when run errored out - simulate a "running but not completed" path from root to errored node?
 #       is that even really useful?
 
-# TODO: should we have ERROR/ERROR_CAUGHT statuses? this would require getting info from cache as opposed to just
-#       graph node_data. we do already get info from cache (e.g. results) but currently these are only on demand,
-#       not on every trace instantiation
-class ExecutionStatus(Enum):
-    COMPUTED = auto()
-    FROM_CACHE = auto()
-
 
 class Trace:
-    def __init__(self, graph: 'Graph', cache, node_id=None):
+    def __init__(self, graph: 'Graph', cache=None, node_id=None):
         self.graph = graph
         if node_id is None:
             roots = self.graph.root_nodes()
@@ -27,13 +19,16 @@ class Trace:
                 raise ValueError('if no node specified, 1 and only 1 root node must exist')
             node_id = list(roots)[0]
         self.node_id = node_id
-        self.cache = cache
+        self.cache = cache if cache is not None else DictCache()
 
     def __repr__(self):
         # TODO: maybe pick the proper call_key corresponding to the path that this trace was traversed from
         #       would need to keep track of the call path in the trace as you traverse to do that
         call_key = self.graph.nodes[self.node_id]['call_keys'][0]
-        return f'<Trace: {call_key}, {self.execution_status.name}>'
+        try:
+            return f'<Trace: {call_key}, {self.execution_status.name}>, ({self.duration_sec:0.2f} sec)>'
+        except KeyError:
+            return f'<Trace: {call_key}, {self.execution_status.name}>'
 
     @property
     def node_data(self):
@@ -92,7 +87,7 @@ class Trace:
 
     @property
     def duration_sec(self):
-        return self.cache.get(f'res_meta:{self.node_id}').duration_sec
+        return self.cache.get(f'graph_execution_meta:{self.graph.graph_build_id}:{self.node_id}').duration_sec
 
     def full_graph(self):
          full_graph = self.cache.get(f'full_graph:{self.graph.graph_build_id}').graph
@@ -102,8 +97,10 @@ class Trace:
     def execution_status(self):
         if self.node_data['from_cache_only']:
             return ExecutionStatus.FROM_CACHE
-        else:
-            return ExecutionStatus.COMPUTED
+        try:
+            return self.cache.get(f'graph_execution_meta:{self.graph.graph_build_id}:{self.node_id}').status
+        except KeyError:
+            return ExecutionStatus.NOT_RUN
 
     @property
     def computed(self):
@@ -114,6 +111,14 @@ class Trace:
         return self.execution_status == ExecutionStatus.FROM_CACHE
 
     def replay(self):
+        # NOTE TO USER: If you are running a replay in debug mode, and you are unsure of the location of your provider
+        #               you are replaying for purposes of putting a breakpoint in it, you can instead put the breakpoint
+        #               in the framework run_provider function which will be one step before yours
+        #
+        #               b darl/provider.py:159
+
+        # TODO: should this be reimplemented using ngn.pin and passing ngn directly to provider?
+
         # note: this graph is already likely a trimmed execution graph itself
         # TODO: how to behave when self.graph is the result of a .full_graph call?
         graph = self.graph.subset_upstream_of_node(node=self.node_id)
@@ -150,8 +155,5 @@ class Trace:
             root_nodes = graph.root_nodes()
             if len(root_nodes) != 1:
                 raise ValueError('expected 1 and only 1 root node')
-            node_id = root_nodes[0]
+            node_id = list(root_nodes)[0]
         return cls(graph, cache, node_id)
-
-
-
