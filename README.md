@@ -176,6 +176,7 @@ print(ngn.A())
 Typically, coding parallel execution schemes requires explicit parallelization constructs and management. Darl makes parallel execution/coding completely transparent to users and look just like plain sequential execution. This can be achieved due to the fact that darl lazily builds a computation graph. This computation graph can then be passed to different types of executors including parallel graph executors.
 
 ```python
+import time
 from darl import Engine
 from darl.cache import DiskCache
 from darl.execution.dask import DaskRunner
@@ -196,12 +197,14 @@ def NationalGDP(ngn, country):
         return sum(gdps)
     else:
         ngn.collect()
+        time.sleep(2)
         return {
             'Canada': 10,
             'Mexico': 10,
         }[country]
 
 def RegionalGDP(ngn, country, region):
+    time.sleep(2)
     return {
         ('USA', 'East'): 10,
         ('USA', 'West'): 10,
@@ -212,7 +215,7 @@ cache.purge()                                    # So result doesn't pull from c
 client = Client()                                # Automatically sets up a local multiprocess dask cluster; Can set up dask cluster to be distributed as well, in which case cache needs to be accessible from all distributed worker instances (e.g. RedisCache)
 runner = DaskRunner(client=client)
 ngn = Engine.create([NorthAmericaGDP, NationalGDP, RegionalGDP], runner=runner, cache=cache)
-ngn.NorthAmericaGDP()
+ngn.NorthAmericaGDP()  # ~2 sec, instead of ~8 seconds for sequential run
 ```
 
 The runner backend is configurable and customizable, users can even define their own by implementing the Runner interface found here: `darl.execution.base.Runner`. Currently only a local SequentialRunner and a DaskRunner are available. A RayRunner is also in the works.
