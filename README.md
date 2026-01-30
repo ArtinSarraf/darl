@@ -183,12 +183,11 @@ from darl.execution.dask import DaskRunner
 from dask.distributed import Client                                                  # requires installing dask/dask.distributed
 
 def NorthAmericaGDP(ngn):
-    gdps = []
+    gdp = 0
     for country in ['USA', 'Canada', 'Mexico']:                                      # for loop over service call is automatically parallelized
-        gdp = ngn.NationalGDP(country)
-        gdps.append(gdp)
+        gdp += ngn.NationalGDP(country)
     ngn.collect()
-    return sum(gdps)
+    return gdp
 
 def NationalGDP(ngn, country):
     if country == 'USA':
