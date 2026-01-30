@@ -2,16 +2,17 @@
 
 Darl is a lightweight code execution framework that transparently provides incremental computations, caching, scenario/shock analysis, parallel/distributed execution and more. The code you write closely resembles standard python code with some structural conventions added to automatically unlock these abilities. While the motivating usecase was computational modeling, the abilities provided by this library are broadly applicable across many different disciplines.
 
+## Installation
+`pip install darl`
+
+Darl has no external dependencies. Standard library only.
+
+## Core Concepts
 At a high level, Darl works by registering functions (or callable objects), which we call `Providers`, on a central object called an `Engine`. These providers are registered as a `Service` on the engine, with a name called the `Service Name`. The engine holds a mapping of `service name -> implementing provider`. Rather than invoking providers directly, they are invoked through the engine, which we refer to as a `Service Call` (service calls within a provider define what services the provider depends on, and for that reason services called within a provider are also referred to as dependencies). This allows us to (1) lazily build/compile a graph of computations for optimized execution, automatic caching/invalidation and more, and (2) update the `service -> provider` mapping to allow for alternative logic/scenarios to be executed without modifying source code. As a general rule, a service should be thought of, and named, as the "thing" you want (i.e. a noun), and the provider is a specific implementation of "how" you get the thing you want. 
 
 Providers should be deterministic (and ideally pure) to ensure proper caching functionality (but a mechanism does exist to allow non-deterministic providers to integrate properly with the system. See the section on `Value Hashing` for more details on this). The cache key is determined by a provider's source code + input arguments + all depedent services' cache keys. If the provider is an instantiated class, the cache key also includes the source code of the parent classes and the instance attributes). If the source code of a provider changes (or the provider implementing a service changes) this would result in a new cache key for itself and all downstream nodes to compute in the computational graph. If a provider were to be non-determinstic then that means that injecting cached results from a previous run could provide incorrect results.
 
 As suggested above, by the mention of "graph of computations" and "dependencies", under the hood darl is yet another DAG library. While this fact is mostly transparent to end users and they don't have to think in terms of graphs, it's still good to understand some of the basic concepts and implications of this. The main implication is that a single root execution needs to be defined within finite boundaries (i.e. no infinite loops or cycles). Also a computation graph is static, once it has been compiled. However, there are mechanisms for dynamically defining the graph during compile time. Each node in the graph is defined by a provider + the arguments passed to that provider (as well as some other metadata).
-
-## Installation
-`pip install darl`
-
-Darl has no external dependencies. Standard library only.
 
 ## Usage
 Full docs in progress
@@ -211,7 +212,7 @@ def RegionalGDP(ngn, country, region):
 
 cache = DiskCache('/tmp/darl_parallel_example')  # Need to use a cross process persistent cache (i.e. not DictCache); use another temp disk cache path if necessary
 cache.purge()                                    # So result doesn't pull from cache
-client = Client()                                # Automatically sets up a local multiprocess dask cluster; Can set up dask cluster to be distributed as well, in which case cache needs to be accessible from all distributed worker instances (e.g. RedisCache)
+client = Client(n_workers=4)                     # Automatically sets up a local multiprocess dask cluster; Can set up dask cluster to be distributed as well, in which case cache needs to be accessible from all distributed worker instances (e.g. RedisCache)
 runner = DaskRunner(client=client)
 ngn = Engine.create([NorthAmericaGDP, NationalGDP, RegionalGDP], runner=runner, cache=cache)
 ngn.NorthAmericaGDP()  # ~2 sec, instead of ~8 seconds for sequential run
